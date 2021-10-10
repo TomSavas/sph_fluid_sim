@@ -16,6 +16,10 @@
 
 #include "glm/glm.hpp"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+#undef STB_IMAGE_IMPLEMENTATION
+
 static bool breakGlError = false;
 void GLAPIENTRY
 MessageCallback(GLenum source,
@@ -193,6 +197,92 @@ int main(void)
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
 
+    float skyboxVertices[] = {
+        // positions          
+        -1.0f,  1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
+        1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+        1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+        -1.0f,  1.0f, -1.0f,
+        1.0f,  1.0f, -1.0f,
+        1.0f,  1.0f,  1.0f,
+        1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+        1.0f, -1.0f, -1.0f,
+        1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+        1.0f, -1.0f,  1.0f
+    };
+
+    const char* skyboxImages[] = 
+    { 
+        "../assets/skybox/right.jpg",
+        "../assets/skybox/left.jpg",
+        "../assets/skybox/top.jpg",
+        "../assets/skybox/bottom.jpg",
+        "../assets/skybox/front.jpg",
+        "../assets/skybox/back.jpg"
+    };
+
+    unsigned int skyboxCubemapId;
+    glGenTextures(1, &skyboxCubemapId);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemapId);
+    for (int i = 0; i < 6; i++)
+    {
+        int width, height, n;
+        unsigned char* img = stbi_load(skyboxImages[i], &width, &height, &n, 3);
+        if (!img)
+        {
+            printf("lmao\n");
+            return 0; // For the time being just die
+        }
+
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img);
+        stbi_image_free(img);
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);  
+
+    unsigned int skyboxVao, skyboxVbo;
+    glGenVertexArrays(1, &skyboxVao);
+    glGenBuffers(1, &skyboxVbo);
+    glBindVertexArray(skyboxVao);
+    glBindBuffer(GL_ARRAY_BUFFER, skyboxVbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+
     int workGroupCount[3];
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &workGroupCount[0]);
     glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 1, &workGroupCount[1]);
@@ -255,6 +345,7 @@ int main(void)
     Shader integrationCompShader("../src/sph_integration.comp");
     Shader passthroughShader("../src/passthrough.vert", "../src/passthrough.frag");
     Shader simpleModelShader("../src/simple_model.vert", "../src/simple_model.frag");
+    Shader skyboxShader("../src/skybox.vert", "../src/skybox.frag");
 
     breakGlError = true;
 
@@ -263,13 +354,13 @@ int main(void)
     bool initialStart = true;
 
     std::vector<glm::vec3> sphere = SphereModel(16, 16);
-    unsigned int vao;
-    glGenVertexArrays(1, &vao);
-    glBindVertexArray(vao);
+    unsigned int sphereVao;
+    glGenVertexArrays(1, &sphereVao);
+    glBindVertexArray(sphereVao);
 
-    unsigned int vbo;
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    unsigned int sphereVbo;
+    glGenBuffers(1, &sphereVbo);
+    glBindBuffer(GL_ARRAY_BUFFER, sphereVbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * sphere.size(), sphere.data(), GL_DYNAMIC_DRAW);
 
     glEnable(GL_DEPTH_TEST);
@@ -307,6 +398,7 @@ int main(void)
         simpleModelShader.SetUniform("view", camera.View());
         Transform t;
 
+        glBindVertexArray(sphereVao);
         for (int i = 1; i < 4; i++)
             glDisableVertexAttribArray(i);
         glEnableVertexAttribArray(0);
@@ -326,6 +418,16 @@ int main(void)
             simpleModelShader.SetUniform("model", t.Model());
             glDrawArrays(GL_TRIANGLES, 0, sphere.size());
         }
+
+        glDepthFunc(GL_LEQUAL);
+        skyboxShader.Use();
+        glm::mat4 viewProjection = camera.projection * glm::mat4(glm::mat3(camera.View()));
+        skyboxShader.SetUniform("viewProjection", viewProjection);
+        glBindVertexArray(skyboxVao);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemapId);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+        glDepthFunc(GL_LESS);
 
         if (particleCount < MAX_PARTICLE_COUNT && glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS)
             particleCount += 2;
