@@ -115,8 +115,8 @@ std::vector<glm::vec3> SphereModel(int rings, int slices)
     return verts;
 }
 
-#define PARTICLE_COUNT 1024
-#define MAX_PARTICLE_COUNT 4096
+#define PARTICLE_COUNT 1024*3
+#define MAX_PARTICLE_COUNT 4096*2
 struct ParticleData
 {
     glm::vec4 posAndMass;
@@ -125,7 +125,7 @@ struct ParticleData
     glm::vec4 force;
 }; 
 
-void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader& forceCompShader, Shader& integrationCompShader, int particleCount, std::vector<ParticleData>& particleData, unsigned int particleDataBufId, glm::vec3 gravity)
+void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader& forceCompShader, Shader& integrationCompShader, int particleCount, std::vector<ParticleData>& particleData, unsigned int particleDataBufId, glm::vec3 gravity, glm::vec3 box)
 {
         static const float smoothingRadius = 1.0f;
         static const float poly6Const = 315.f / (64.f * PI * pow(smoothingRadius, 9.f));
@@ -144,7 +144,7 @@ void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader&
         forceCompShader.Use();
         forceCompShader.SetUniform("particleCount", particleCount);
         forceCompShader.SetUniform("smoothingRadius", smoothingRadius);
-        forceCompShader.SetUniform("viscosityConst", 0.018f);
+        forceCompShader.SetUniform("viscosityConst", 0.188f);
         forceCompShader.SetUniform("spikyConst", spikyConst);
         forceCompShader.SetUniform("laplacianConst", -spikyConst);
         forceCompShader.SetUniform("gravity", gravity);
@@ -154,6 +154,7 @@ void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader&
         integrationCompShader.Use();
         integrationCompShader.SetUniform("timestep", 0.016f);
         integrationCompShader.SetUniform("gravity", gravity);
+        integrationCompShader.SetUniform("box", box);
         glDispatchCompute(particleCount, 1, 1);
         glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
@@ -217,16 +218,26 @@ int main(void)
     printf("sizeof(ParticleData) * particleData.size() = %d\n", sizeof(ParticleData) * particleData.size());
 
     int particleCount = PARTICLE_COUNT;
+    glm::vec3 box(35.f, 100.f, 25.f);
     for (int i = 0; i < MAX_PARTICLE_COUNT; i++)
     {
-        particleData[i].posAndMass = glm::vec4((float)(std::rand() % 1000) / 50.f - 10.f,
-                (float)(std::rand() % 1000) / 500.f - 1.f,
-                //0.f,
-                (float)(std::rand() % 1000) / 50.f - 10.f,
-                //2.5f);
-                1.f);
-        //particleData[i].vel = glm::vec4(0.f, -100.f, 0.f, 0.f);
-        particleData[i].vel = glm::vec4(0.f, -10.f, 0.f, 0.f);
+        if (i < PARTICLE_COUNT)
+        {
+            particleData[i].posAndMass = glm::vec4(
+                    (float)(std::rand() % 1000) / 1000.f * box.x,
+                    (float)(std::rand() % 1000) / 1000.f * (box.y / 50.f) + box.y / 5.f,
+                    (float)(std::rand() % 1000) / 1000.f * box.z,
+                    1.f);
+        }
+        else
+        {
+            particleData[i].posAndMass = glm::vec4(0.5f,
+                    (float)(std::rand() % 1000) / 1000.f * 5.f + 30.f,
+                    (float)(std::rand() % 1000) / 1000.f * 5.f + (box.z / 2),
+                    1.f);
+        }
+
+        particleData[i].vel = glm::vec4(20.f, -15.f, 0.f, 0.f);
         particleData[i].props = glm::vec4(0.f, 0.f, 0.f, 0.f); 
         particleData[i].force = glm::vec4(0.f, 0.f, 0.f, 0.f); 
     }
@@ -264,7 +275,7 @@ int main(void)
     glEnable(GL_DEPTH_TEST);
 
     Camera camera;
-    camera.transform.pos.z -= 70.f;
+    camera.transform.pos = glm::vec3(15, 30, -90);
 
     while (!glfwWindowShouldClose(window)) 
     {
@@ -274,8 +285,8 @@ int main(void)
         camera.Update(window);
         ImGuiWrapper::PreRender();
 
-        static float gravityScale = 9.8;
-        runSimulationCompute(window, densityCompShader, forceCompShader, integrationCompShader, particleCount, particleData, particleDataId, glm::vec3(0.f, -1.f, 0.f) * gravityScale);
+        static float gravityScale = 20;
+        runSimulationCompute(window, densityCompShader, forceCompShader, integrationCompShader, particleCount, particleData, particleDataId, glm::vec3(0.f, -1.f, 0.f) * gravityScale, box);
 
         bool keyDown = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
         for (int i = 0; i < particleCount; i++)
@@ -316,23 +327,8 @@ int main(void)
             glDrawArrays(GL_TRIANGLES, 0, sphere.size());
         }
 
-        static int initialDelay = 900;
-        static int frames = 0;
-        initialDelay--;
-        frames++;
-        if (particleCount < MAX_PARTICLE_COUNT)
-        {
-            bool spawnRequested = glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS;
-            bool timedSpawn = frames % 300 == 0 && initialDelay <= 0;
-            //bool timedSpawn = false;
-            if (timedSpawn || spawnRequested)
-            {
-                particleCount += 128 * (spawnRequested ? 2 : 1);
-                if (particleCount > MAX_PARTICLE_COUNT)
-                    particleCount = MAX_PARTICLE_COUNT;
-                initialDelay = 0;
-            }
-        }
+        if (particleCount < MAX_PARTICLE_COUNT && glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS)
+            particleCount += 2;
 
         ShowFPS(camera);
 

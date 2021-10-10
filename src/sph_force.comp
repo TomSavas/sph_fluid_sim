@@ -75,5 +75,5 @@ void main()
     pressureForce *= -1;
     viscosityForce *= viscosityConst;
 
-    particles[index].force.xyz = pressureForce + viscosityForce + (gravity * density); 
+    particles[index].force.xyz = pressureForce + viscosityForce + (gravity); 
 }

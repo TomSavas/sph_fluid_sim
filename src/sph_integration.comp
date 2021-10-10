@@ -16,6 +16,7 @@ layout(std430, binding=0) buffer Particles
 
 uniform float timestep;
 uniform vec3 gravity;
+uniform vec3 box;
 
 void main()
 {
@@ -25,27 +26,33 @@ void main()
     vec3 pos = particle.posAndMass.xyz;
     vec3 vel = particle.velocity.xyz;
 
-    vel += ((particle.force.xyz / particle.props.x)) * timestep;
+    //vel += ((particle.force.xyz / particle.props.x)) * timestep;
+    vel += ((particle.force.xyz)) * timestep;
     pos += vel * timestep;
 
-#define BOX_EXTENT 15.f
-    if (pos.y < -(BOX_EXTENT + 5.f))
+    if (pos.y <= 0.f || pos.y >= box.y)
+    //if (pos.y < -(BOX_EXTENT + 5.f))
     {
-        pos.y = max(pos.y, -(BOX_EXTENT + 10.f));
+        //pos.y = max(pos.y, -(BOX_EXTENT + 10.f));
+        pos.y = max(0.f, min(pos.y, box.y));
         vel.y *= -0.3;
         //vel.y = 0.f;
     }
 
-    if (pos.x < -BOX_EXTENT || pos.x > BOX_EXTENT)
+    //if (pos.x < -BOX_EXTENT || pos.x > BOX_EXTENT)
+    if (pos.x <= 0.f || pos.x >= box.x)
     {
-        pos.x = max(-BOX_EXTENT, min(BOX_EXTENT, pos.x));
+        //pos.x = max(-BOX_EXTENT, min(BOX_EXTENT, pos.x));
+        pos.x = max(0.f, min(pos.x, box.x));
         vel.x *= -0.3;
         //vel.x = 0.f;
     }
 
-    if (pos.z < -(BOX_EXTENT/2.f) || pos.z > (BOX_EXTENT/2.f))
+    //if (pos.z < -(BOX_EXTENT/2.f) || pos.z > (BOX_EXTENT/2.f))
+    if (pos.z <= 0.f || pos.z >= box.z)
     {
-        pos.z = max(-(BOX_EXTENT/2.f), min((BOX_EXTENT/2.f), pos.z));
+        //pos.z = max(-(BOX_EXTENT/2.f), min((BOX_EXTENT/2.f), pos.z));
+        pos.z = max(0.f, min(pos.z, box.z));
         vel.z *= -0.3;
         //vel.z = 0.f;
     }
