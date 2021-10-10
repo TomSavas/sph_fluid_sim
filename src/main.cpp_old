@@ -1,0 +1,368 @@
+/*
+#include <unistd.h>
+#include <stdio.h>
+#include <sys/ptrace.h>
+#include <sys/wait.h>
+
+int main(int argc, char** argv)
+{
+    pid_t pid = fork();
+    if (pid == 0) 
+    {
+        printf("Running child\n");
+
+        ptrace(PTRACE_TRACEME, 0, NULL, NULL);
+        execv(argv[1], &argv[2]);
+        //execl(argv[1], argv[1], NULL);
+    }
+    else if (pid > 1)
+    {
+        printf("Running debugger, child pid: %d\n", pid);
+
+        int wait_status;
+        auto options = 0;
+        waitpid(pid, &wait_status, options);
+
+        printf("Launched\n");
+    }
+}
+*/
+
+#include <stdio.h>
+#include <vector>
+#include <cstdlib>
+#include <math.h>
+
+#define GLX_GLXEXT_PROTOTYPES
+#include <GL/glew.h>
+#include <GL/gl.h>
+#include <GL/glx.h>
+#include "GLFW/glfw3.h"
+
+#include "imgui_wrapper.h"
+#include "shader.h"
+#include "camera.h"
+
+#include "glm/glm.hpp"
+
+void GLAPIENTRY
+MessageCallback(GLenum source,
+        GLenum type,
+        GLuint id,
+        GLenum severity,
+        GLsizei length,
+        const GLchar* message,
+        const void* userParam)
+{
+    fprintf(stderr, "GL CALLBACK: %s type = 0x%x, severity = 0x%x, \n\tmessage = %s\n",
+            ( type == GL_DEBUG_TYPE_ERROR ? "** GL ERROR **" : "" ),
+            type, severity, message );
+}
+
+void ShowFPS()
+{
+    static int frameCount = 0;
+
+    static bool open = true;
+    const float PAD = 10.0f;
+
+    ImGuiIO& io = ImGui::GetIO();
+    ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImVec2 work_pos = viewport->WorkPos; // Use work area to avoid menu-bar/task-bar, if any!
+    ImVec2 work_size = viewport->WorkSize;
+    ImVec2 window_pos, window_pos_pivot;
+    window_pos.x = work_pos.x + work_size.x - PAD;
+    window_pos.y = work_pos.y + PAD;
+    window_pos_pivot.x = 1.0f;
+    window_pos_pivot.y = 0.0f;
+    ImGui::SetNextWindowPos(window_pos, ImGuiCond_Always, window_pos_pivot);
+    window_flags |= ImGuiWindowFlags_NoMove;
+
+    ImGui::SetNextWindowBgAlpha(0.35f); // Transparent background
+    if (ImGui::Begin("Example: Simple overlay", &open, window_flags))
+    {
+        ImGui::Text("Particles");
+        ImGui::SameLine();
+#ifdef DEBUG
+        ImGui::TextColored(ImVec4(1.f, 0.f, 0.f, 1.f), "DEBUG");
+#else
+        ImGui::TextColored(ImVec4(0.f, 1.f, 0.f, 1.f), "RELEASE");
+#endif
+        ImGui::Separator();
+
+        static const unsigned char *vendor = glGetString(GL_VENDOR);
+        static const unsigned char *renderer = glGetString(GL_RENDERER);
+        static const unsigned char *version = glGetString(GL_VERSION);
+        ImGui::Text("%s\n%s\n%s", vendor, renderer, version);
+
+        ImGui::Separator();
+        ImGui::Text("Frametime: %.2fms", io.DeltaTime * 1000);
+        ImGui::Text("FPS: %.1f", io.Framerate);
+    }
+    ImGui::End();
+}
+
+#define PI 3.14159265358979323846f
+#define DEG2RAD (PI / 180.f)
+std::vector<glm::vec3> SphereModel(int rings, int slices)
+{
+    std::vector<glm::vec3> verts;
+
+    for (int i = 0; i < (rings + 2); i++)
+    {
+        for (int j = 0; j < slices; j++)
+        {
+            verts.push_back(glm::vec3(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*sinf(DEG2RAD*(360.0f*j/slices)),
+                    sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*i)),
+                    cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*cosf(DEG2RAD*(360.0f*j/slices))));
+            verts.push_back(glm::vec3(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*sinf(DEG2RAD*(360.0f*(j + 1)/slices)),
+                    sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1))),
+                    cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*cosf(DEG2RAD*(360.0f*(j + 1)/slices))));
+            verts.push_back(glm::vec3(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*sinf(DEG2RAD*(360.0f*j/slices)),
+                    sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1))),
+                    cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*cosf(DEG2RAD*(360.0f*j/slices))));
+
+            verts.push_back(glm::vec3(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*sinf(DEG2RAD*(360.0f*j/slices)),
+                    sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*i)),
+                    cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*i))*cosf(DEG2RAD*(360.0f*j/slices))));
+            verts.push_back(glm::vec3(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i)))*sinf(DEG2RAD*(360.0f*(j + 1)/slices)),
+                    sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i))),
+                    cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i)))*cosf(DEG2RAD*(360.0f*(j + 1)/slices))));
+            verts.push_back(glm::vec3(cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*sinf(DEG2RAD*(360.0f*(j + 1)/slices)),
+                    sinf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1))),
+                    cosf(DEG2RAD*(270 + (180.0f/(rings + 1))*(i + 1)))*cosf(DEG2RAD*(360.0f*(j + 1)/slices))));
+        }
+    }
+
+    return verts;
+}
+
+int main(void) 
+{
+    if (!glfwInit())
+        return -1;
+
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+
+    GLFWwindow *window = glfwCreateWindow(1920, 1080, "Ignoramus", NULL, NULL);
+    if (!window) 
+    {
+        glfwTerminate();
+        return -1;
+    }
+    glfwMakeContextCurrent(window);
+
+    if (glewInit() != GLEW_OK)
+    {
+        fprintf(stderr, "Failed initializing glew\n");
+        glfwTerminate();
+        return -1;
+    }
+
+    glEnable (GL_DEBUG_OUTPUT);
+    glDebugMessageCallback(MessageCallback, 0);
+
+    ImGuiWrapper::Init(window);
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
+
+    int workGroupCount[3];
+    glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 0, &workGroupCount[0]);
+    glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 1, &workGroupCount[1]);
+    glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_COUNT, 2, &workGroupCount[2]);
+    printf("max global (total) work group counts x:%i y:%i z:%i\n",
+              workGroupCount[0], workGroupCount[1], workGroupCount[2]);
+
+    int workGroupSize[3];
+    glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 0, &workGroupSize[0]);
+    glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 1, &workGroupSize[1]);
+    glGetIntegeri_v(GL_MAX_COMPUTE_WORK_GROUP_SIZE, 2, &workGroupSize[2]);
+    printf("max global (in one shader) work group sizes x:%i y:%i z:%i\n",
+              workGroupSize[0], workGroupSize[1], workGroupSize[2]);
+
+    int workGroupInvocations;
+    glGetIntegerv(GL_MAX_COMPUTE_WORK_GROUP_INVOCATIONS, &workGroupInvocations);
+    printf("max local work group invocations %i\n", workGroupInvocations);
+
+#define PARTICLE_COUNT 1024
+    struct ParticleData
+    {
+        glm::vec4 posAndLifetime;
+        glm::vec4 vel;
+        glm::vec4 accel;
+    }; 
+    printf("sizeof(glm::vec4) = %d\n", sizeof(glm::vec4));
+    printf("sizeof(ParticleData) = %d\n", sizeof(ParticleData));
+    //return 1;
+    ParticleData particleData[PARTICLE_COUNT];
+
+    //glm::vec4 initialPosAndLifetime[PARTICLE_COUNT];
+    for (int x = 0; x < 2; x++)
+        for (int y = 0; y < 2; y++)
+            for (int z = 0; z < 2; z++)
+            {
+                //initialPosAndLifetime[x*2*2+y*2+z] = glm::vec4(500.f, 500.f, 500.f, 10000.f);
+                particleData[x*2*2+y*2+z].posAndLifetime = glm::vec4((float)x - 0.5f, y - 0.5f, z - 0.5f, 10000.f);
+                particleData[x*2*2+y*2+z].vel = glm::vec4(0.f, 0.f, 0.f, 0.f);
+                particleData[x*2*2+y*2+z].accel = glm::vec4(0.f, 0.f, 0.f, 0.f);
+            }
+    for (int i = 8; i < PARTICLE_COUNT; i++)
+    {
+        particleData[i].posAndLifetime = glm::vec4((float)(std::rand() % 1000) / 500.f - 1.f,
+                (float)(std::rand() % 1000) / 500.f - 1.f,
+                (float)(std::rand() % 1000) / 500.f - 1.f,
+                std::rand() % 1000);
+        particleData[i].vel = glm::vec4(0.f, 0.f, 0.f, 0.f);
+        particleData[i].accel = glm::vec4(0.f, 0.f, 0.f, 0.f);
+    }
+    for (int i = 0; i < PARTICLE_COUNT; i++)
+        particleData[i].posAndLifetime *= 10.f;
+    //unsigned int initialPosAndLifetimeId;
+    //glGenBuffers(1, &initialPosAndLifetimeId);
+    //glBindBuffer(GL_SHADER_STORAGE_BUFFER, initialPosAndLifetimeId);
+    ////glBufferData(GL_SHADER_STORAGE_BUFFER, PARTICLE_COUNT * sizeof(glm::vec4), &initialPosAndLifetime, GL_DYNAMIC_DRAW);
+    //glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(glm::vec4), &initialPosAndLifetime, GL_DYNAMIC_DRAW);
+    //glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, initialPosAndLifetimeId);
+    //glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    //glm::vec4 posAndLifetime[PARTICLE_COUNT];
+    //for (int i = 8; i < PARTICLE_COUNT; i++)
+    //    posAndLifetime[i] = initialPosAndLifetime[i];
+    unsigned int particleDataId;
+    glGenBuffers(1, &particleDataId);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleDataId);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(particleData), &particleData, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleDataId);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+
+    //for (int i = 0; i < PARTICLE_COUNT; i++)
+    //{
+    //    printf("x: %f, y: %f, z: %f, lifetime: %f\n", initialPosAndLifetime[i].x, initialPosAndLifetime[i].y, initialPosAndLifetime[i].z, initialPosAndLifetime[i].w);
+    //}
+    for (int i = 0; i < PARTICLE_COUNT; i++)
+    {
+        printf("x: %f, y: %f, z: %f, lifetime: %f\n", particleData[i].posAndLifetime.x, particleData[i].posAndLifetime.y, particleData[i].posAndLifetime.z, particleData[i].posAndLifetime.w);
+        printf("\taccel x: %f, y: %f, z: %f\n", particleData[i].accel.x, particleData[i].accel.y, particleData[i].accel.z);
+        printf("\tvel x: %f, y: %f, z: %f\n", particleData[i].vel.x, particleData[i].vel.y, particleData[i].vel.z);
+    }
+    printf("sizeof(particleData): %d\n", sizeof(particleData));
+
+    Shader compShader("../src/fluid_sim.comp");
+    Shader passthroughShader("../src/passthrough.vert", "../src/passthrough.frag");
+    Shader simpleModelShader("../src/simple_model.vert", "../src/simple_model.frag");
+    //return 1;
+
+    glClearColor(0.0f, 0.0f, 0.0f, 1.f);
+    bool showDemoWindow = true;
+    bool initialStart = true;
+
+    unsigned int vao;
+    glGenVertexArrays(1, &vao);
+    glBindVertexArray(vao);
+
+    unsigned int vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    //glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec4) * PARTICLE_COUNT, initialPosAndLifetime, GL_DYNAMIC_DRAW);
+
+    //glBufferData(GL_ARRAY_BUFFER, sizeof(particleData), NULL, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(particleData), NULL, GL_DYNAMIC_DRAW);
+    //glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec4) * PARTICLE_COUNT, NULL, GL_DYNAMIC_DRAW);
+
+    //glDisable(GL_DEPTH_TEST);
+    //glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+
+    Camera camera;
+
+    std::vector<glm::vec3> sphere = SphereModel(16, 16);
+
+    ParticleData data[PARTICLE_COUNT];
+    while (!glfwWindowShouldClose(window)) 
+    {
+        glfwPollEvents();
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+
+        camera.Update(window);
+        ImGuiWrapper::PreRender();
+
+        compShader.Use();
+        compShader.SetUniform("initialStart", initialStart);
+        compShader.SetUniform("timestep", 0.016f);
+        //glUseProgram(computeShaderId);
+        //glUniform1i(glGetUniformLocation(computeShader, "initialStart"), (int)initialStart);
+        glDispatchCompute(PARTICLE_COUNT, 1, 1);
+
+        // Sync 
+        glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+
+        //glGetNamedBufferSubData(posAndLifetimeId, 0, PARTICLE_COUNT * sizeof(glm::vec4), data.data());
+        glGetNamedBufferSubData(particleDataId, 0, sizeof(particleData), &data);
+
+        //glBindVertexArray(vertexArrayId);
+        std::vector<glm::vec4> positions;
+        bool keyDown = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
+        for (int i = 0; i < PARTICLE_COUNT; i++)
+        {
+            positions.push_back(glm::vec4(data[i].posAndLifetime.x, data[i].posAndLifetime.y, data[i].posAndLifetime.z, data[i].posAndLifetime.w));
+            if (keyDown)
+            {
+                printf("x: %f, y: %f, z: %f, lifetime: %f\n", data[i].posAndLifetime.x, data[i].posAndLifetime.y, data[i].posAndLifetime.z, data[i].posAndLifetime.w);
+                printf("\taccel x: %f, y: %f, z: %f\n", data[i].accel.x, data[i].accel.y, data[i].accel.z);
+                printf("\tvel x: %f, y: %f, z: %f\n", data[i].vel.x, data[i].vel.y, data[i].vel.z);
+            }
+        }
+        if (keyDown)
+            printf("\n");
+
+        //glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(data), &data);
+        //for (int i = 0; i < 4; i++)
+        //{
+        //    glEnableVertexAttribArray(i);
+        //    glVertexAttribPointer(i, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), (void*)(i * sizeof(glm::vec4)));
+        //}
+
+        //passthroughShader.Use();
+        //passthroughShader.SetUniform("projection", camera.projection);
+        //passthroughShader.SetUniform("view", camera.View());
+        //glDrawArrays(GL_POINTS, 0, PARTICLE_COUNT);
+
+        simpleModelShader.Use();
+        simpleModelShader.SetUniform("projection", camera.projection);
+        simpleModelShader.SetUniform("view", camera.View());
+        Transform t;
+
+        for (int i = 1; i < 4; i++)
+            glDisableVertexAttribArray(i);
+        glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(glm::vec3) * sphere.size(), sphere.data());
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+
+        for (int i = 0; i < PARTICLE_COUNT; i++)
+        {
+            t.pos = glm::vec3(data[i].posAndLifetime.x,
+                    data[i].posAndLifetime.y,
+                    data[i].posAndLifetime.z);
+            simpleModelShader.SetUniform("model", t.Model());
+            glDrawArrays(GL_TRIANGLES, 0, sphere.size());
+        }
+
+
+        ShowFPS();
+        //ImGui::ShowDemoWindow(&showDemoWindow);
+        ImGuiWrapper::Render();
+
+        glfwSwapBuffers(window);
+
+        if (initialStart)
+            initialStart = false;
+    }
+
+    ImGuiWrapper::Deinit();
+    glfwTerminate();
+
+    return 0;
+}

@@ -1,0 +1,66 @@
+#version 430
+layout(local_size_x = 1) in;
+
+struct ParticleData
+{
+    vec4 posAndLifetime;
+    vec4 vel;
+    vec4 accel;
+};
+
+layout(std430, binding=0) buffer SpawnData
+{
+    ParticleData particleData[];
+};
+
+uniform bool initialStart;
+uniform float timestep;
+
+void main()
+{
+    uint particleIndex = gl_GlobalInvocationID.x;
+
+    vec3 pos = particleData[particleIndex].posAndLifetime.xyz;
+    float lifetime = particleData[particleIndex].posAndLifetime.w;
+    vec3 velocity = particleData[particleIndex].vel.xyz;
+    vec3 acceleration = particleData[particleIndex].accel.xyz;
+
+    if (false)
+    //if (lifetime < 0.f)
+    //if (lifetime < 0.f || initialStart)
+    //if (initialStart)
+    {
+        //particlePosAndLifetime[particleIndex] = initialPosAndLifetime[particleIndex];
+        //vel[particleIndex] = vec3(0.f);
+        //accel[particleIndex] = vec3(0.f);
+    }
+    else
+    {
+#define PARTICLE_COUNT 1024
+        for (int i = 0; i < PARTICLE_COUNT; i++)
+        {
+            if (i == particleIndex)
+                continue;
+
+#define G 6.674E-11
+#define mass 500
+            vec3 toNeighbour = particleData[i].posAndLifetime.xyz - pos;
+            float distSqr = dot(toNeighbour, toNeighbour);
+            if (distSqr > 0.1f)
+            {
+                vec3 dir = normalize(toNeighbour);
+                //acceleration += dir * (G*mass*mass / distSqr);
+                acceleration += dir * (G*lifetime * particleData[i].posAndLifetime.w / distSqr);
+            }
+        }
+
+        velocity += acceleration * timestep;
+        pos += velocity * timestep;
+        lifetime -= timestep;
+
+        particleData[particleIndex].posAndLifetime = vec4(pos, lifetime);
+        particleData[particleIndex].vel = vec4(velocity, 0.f);
+        particleData[particleIndex].accel = vec4(0.f);
+        //particlePosAndLifetime[particleIndex] = pos;
+    }
+}

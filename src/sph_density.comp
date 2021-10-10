@@ -1,0 +1,55 @@
+#version 430
+layout(local_size_x = 1) in;
+
+struct ParticleData
+{
+    vec4 posAndMass;
+    vec4 velocity;
+    vec4 props;
+    vec4 force;
+};
+
+layout(std430, binding=0) buffer Particles
+{
+    ParticleData particles[];
+};
+
+uniform int particleCount;
+uniform float smoothingRadius;
+uniform float densityReference;
+uniform float pressureConst;
+uniform float poly6Const;
+
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+
+    ParticleData particle = particles[index];
+    vec3 pos = particle.posAndMass.xyz;
+    float mass = particle.posAndMass.w;
+
+    float smoothingRadiusSqr = pow(smoothingRadius, 2);
+
+    float density = 0;
+    float pressure = 0;
+    for (uint i = 0; i < particleCount; i++)
+    {
+        vec3 neighbourPos = particles[i].posAndMass.xyz;
+        float neighbourMass = particles[i].posAndMass.w;
+
+        vec3 toNeighbour = pos - neighbourPos;
+        float distSqr = dot(toNeighbour, toNeighbour);
+
+        if (distSqr < smoothingRadiusSqr)
+        {
+            float w = poly6Const * pow(smoothingRadiusSqr - distSqr, 3);
+            density += neighbourMass * w;
+        }
+    }
+
+    density = max(densityReference, density);
+    pressure = pressureConst * (density - densityReference);
+
+    particles[index].props.x = density;
+    particles[index].props.y = pressure;
+}

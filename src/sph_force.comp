@@ -1,0 +1,79 @@
+#version 430
+layout(local_size_x = 1) in;
+
+struct ParticleData
+{
+    vec4 posAndMass;
+    vec4 velocity;
+    vec4 props;
+    vec4 force;
+};
+
+layout(std430, binding=0) buffer Particles
+{
+    ParticleData particles[];
+};
+
+uniform int particleCount;
+uniform float smoothingRadius;
+uniform float viscosityConst;
+uniform float spikyConst;
+uniform float laplacianConst;
+uniform vec3 gravity;
+
+void main()
+{
+    uint index = gl_GlobalInvocationID.x;
+
+    ParticleData particle = particles[index];
+    vec3 pos = particle.posAndMass.xyz;
+    float mass = particle.posAndMass.w;
+    vec3 vel = particle.velocity.xyz;
+
+    float density = particle.props.x;
+    float pressure = particle.props.y;
+    //vec3 force = particle.force.xyz;
+    vec3 force = vec3(0.f);
+
+    float smoothingRadiusSqr = pow(smoothingRadius, 2);
+    float smoothingRadiusCube = smoothingRadiusSqr * smoothingRadius;
+
+    vec3 pressureForce = vec3(0);
+    vec3 viscosityForce = vec3(0);
+    for (uint i = 0; i < particleCount; i++)
+    {
+        if (i == index)
+            continue;
+
+        vec3 neighbourPos = particles[i].posAndMass.xyz;
+        float neighbourMass = particles[i].posAndMass.w;
+        float neighbourDensity = particles[i].props.x;
+        float neighbourPressure = particles[i].props.y;
+        vec3 neighbourVel = particles[i].velocity.xyz;
+
+        vec3 toNeighbour = pos - neighbourPos;
+        float distSqr = dot(toNeighbour, toNeighbour);
+        float dist = sqrt(distSqr);
+
+        if (dist <= 0 || dist >= smoothingRadius)
+            continue;
+
+        vec3 toNeighbourNorm = normalize(toNeighbour);
+        float massRatio = neighbourMass / mass;
+
+        float spikySmoothingKernel = spikyConst * pow(smoothingRadius - dist, 2.f);
+        pressureForce += massRatio * ((pressure + neighbourPressure) / (2.f * density * neighbourDensity)) * spikySmoothingKernel * toNeighbourNorm;
+
+        // Alternative. I don't think this works as well as the code below
+        //float distCube = distSqr * dist;
+        //float laplacianSmoothingKernel = -(distCube / (2.f * smoothingRadiusCube)) + (distSqr / smoothingRadiusSqr) + (smoothingRadius / (2.f * dist)) - 1;
+        //viscosityForce += massRatio * (1.f / density) * (neighbourVel - vel) * laplacianSmoothingKernel /*square?*/ * toNeighbourNorm;
+
+        viscosityForce += massRatio * (1.f / neighbourDensity) * (neighbourVel - vel) * (laplacianConst * (smoothingRadius - dist)); // * toNeighbourNorm;
+    }
+
+    pressureForce *= -1;
+    viscosityForce *= viscosityConst;
+
+    particles[index].force.xyz = pressureForce + viscosityForce + (gravity * density); 
+}
