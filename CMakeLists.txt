@@ -36,13 +36,7 @@ target_link_libraries(${PROJECT} glm::glm)
 
 target_link_libraries(${PROJECT} GLEW)
 
-#add_subdirectory(lib/assimp)
-#target_link_libraries(${PROJECT} assimp)
-#SET (ASSIMP_BUILD_TESTS OFF)
-
-#target_include_directories(${PROJECT} PRIVATE lib/stb_image)
-
-#target_include_directories(${PROJECT} PRIVATE lib/OBJ-Loader/Source)
+target_include_directories(${PROJECT} PRIVATE lib/stb)
 
 target_include_directories(${PROJECT} PRIVATE lib/imgui)
 
