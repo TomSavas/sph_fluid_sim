@@ -132,7 +132,9 @@ struct ParticleData
     glm::vec4 force;
 }; 
 
-void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader& forceCompShader, Shader& integrationCompShader, int particleCount, std::vector<ParticleData>& particleData, unsigned int particleDataBufId, glm::vec3 gravity, glm::vec3 box)
+void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader& forceCompShader, Shader& integrationCompShader, int particleCount,
+        std::vector<ParticleData>& particleData, unsigned int particleDataBufId, glm::vec3 gravity, glm::vec3 box,
+        glm::vec3 attractorPos, float attractorRadius, float attractorStrength)
 {
         static const float smoothingRadius = 1.0f;
         static const float poly6Const = 315.f / (64.f * PI * pow(smoothingRadius, 9.f));
@@ -162,6 +164,9 @@ void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader&
         integrationCompShader.SetUniform("timestep", 0.016f);
         integrationCompShader.SetUniform("gravity", gravity);
         integrationCompShader.SetUniform("box", box);
+        integrationCompShader.SetUniform("attractorPos", attractorPos);
+        integrationCompShader.SetUniform("attractorRadius", attractorRadius);
+        integrationCompShader.SetUniform("attractorStrength", attractorStrength);
         glDispatchCompute(particleCount, 1, 1);
         glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 }
@@ -398,8 +403,15 @@ int main(void)
 
         static float gravityScale = 20;
         static bool simulationPaused = true;
+        static Transform attractorTransform(glm::vec3(box.x / 2.f, box.y / 2.f, box.z / 2.f));
+        static float attractorRadius = 50.f;
+        static float attractorStrength = 1000.f;
+        static bool attractorEnabled = true;
         if (!simulationPaused)
-            runSimulationCompute(window, densityCompShader, forceCompShader, integrationCompShader, particleCount, particleData, particleDataId, glm::vec3(0.f, -1.f, 0.f) * gravityScale, box);
+        {
+            runSimulationCompute(window, densityCompShader, forceCompShader, integrationCompShader, particleCount, particleData,
+                    particleDataId, glm::vec3(0.f, -1.f, 0.f) * gravityScale, box, attractorTransform.pos, attractorRadius, attractorStrength * (attractorEnabled ? 1.f : 0.f));
+        }
 
         if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
         {
@@ -441,6 +453,24 @@ int main(void)
         simpleModelShader.SetUniform("model", t.Model());
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
+        // Attractor
+        static glm::vec<2, double> lastMousePos(0.f);
+        glm::vec<2, double> mousePos;
+        glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
+        if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT))
+        {
+            glm::vec<2, double> mouseDiff = mousePos - lastMousePos;
+            glm::vec3 movement = camera.transform.Right() * (float)mouseDiff.x + camera.transform.Up() * -(float)mouseDiff.y;
+            attractorTransform.pos += movement * 0.016f * 2.f;
+        }
+        simpleModelShader.SetUniform("density", attractorEnabled ? 5.f : 0.f);
+        lastMousePos = mousePos;
+        simpleModelShader.SetUniform("model", attractorTransform.Model());
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        // Spawner
+        static glm::vec3 spawnerPos;
+
         // Skybox
         static bool skyboxEnabled = skyboxLoaded;
         if (skyboxEnabled && skyboxLoaded)
@@ -456,13 +486,17 @@ int main(void)
         }
 
         if (particleCount < MAX_PARTICLE_COUNT && glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS)
-            particleCount += 2;
+            particleCount += 4;
 
         static bool settingsOpen = true;
         if (ImGui::Begin("Settings", &settingsOpen))
         {
             ImGui::Checkbox("Pause simulation", &simulationPaused);
             ImGui::SliderFloat("Gravity", &gravityScale, 0.f, 100.f);
+            ImGui::Separator();
+            ImGui::Checkbox("Attractor enabled", &attractorEnabled);
+            ImGui::SliderFloat("Attractor radius", &attractorRadius, 0.f, 100.f);
+            ImGui::SliderFloat("Attractor strength", &attractorStrength, 0.f, 2000.f);
 
             if (skyboxLoaded)
             {

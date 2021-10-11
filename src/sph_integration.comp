@@ -18,9 +18,23 @@ uniform float timestep;
 uniform vec3 gravity;
 uniform vec3 box;
 
+uniform vec3 attractorPos;
+uniform float attractorRadius;
+uniform float attractorStrength;
+
 void main()
 {
     uint index = gl_GlobalInvocationID.x;
+
+    vec3 toAttractor = attractorPos - particles[index].posAndMass.xyz;
+    float dist = length(toAttractor);
+    float distPow = pow(dist, 1.5f);
+
+    if (dist < attractorRadius && dist > 0.5f)
+    {
+        //particle.force.xyz += normalize(toAttractor) * attractorStrength / distPow;
+        particles[index].force.xyz += normalize(toAttractor) * attractorStrength / distPow;
+    }
 
     ParticleData particle = particles[index];
     vec3 pos = particle.posAndMass.xyz;
@@ -31,30 +45,21 @@ void main()
     pos += vel * timestep;
 
     if (pos.y <= 0.f || pos.y >= box.y)
-    //if (pos.y < -(BOX_EXTENT + 5.f))
     {
-        //pos.y = max(pos.y, -(BOX_EXTENT + 10.f));
         pos.y = max(0.f, min(pos.y, box.y));
         vel.y *= -0.3;
-        //vel.y = 0.f;
     }
 
-    //if (pos.x < -BOX_EXTENT || pos.x > BOX_EXTENT)
     if (pos.x <= 0.f || pos.x >= box.x)
     {
-        //pos.x = max(-BOX_EXTENT, min(BOX_EXTENT, pos.x));
         pos.x = max(0.f, min(pos.x, box.x));
         vel.x *= -0.3;
-        //vel.x = 0.f;
     }
 
-    //if (pos.z < -(BOX_EXTENT/2.f) || pos.z > (BOX_EXTENT/2.f))
     if (pos.z <= 0.f || pos.z >= box.z)
     {
-        //pos.z = max(-(BOX_EXTENT/2.f), min((BOX_EXTENT/2.f), pos.z));
         pos.z = max(0.f, min(pos.z, box.z));
         vel.z *= -0.3;
-        //vel.z = 0.f;
     }
 
     particles[index].posAndMass.xyz = pos;
