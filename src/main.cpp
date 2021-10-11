@@ -37,7 +37,7 @@ MessageCallback(GLenum source,
         raise(SIGTRAP);
 }
 
-void ShowFPS(Camera& camera)
+void ShowInfo(Camera& camera, int particleCount)
 {
     static int frameCount = 0;
 
@@ -60,7 +60,7 @@ void ShowFPS(Camera& camera)
     ImGui::SetNextWindowBgAlpha(0.35f); // Transparent background
     if (ImGui::Begin("Example: Simple overlay", &open, window_flags))
     {
-        ImGui::Text("Particles");
+        ImGui::Text("SPH fluid sim");
         ImGui::SameLine();
 #ifdef DEBUG
         ImGui::TextColored(ImVec4(1.f, 0.f, 0.f, 1.f), "DEBUG");
@@ -80,6 +80,9 @@ void ShowFPS(Camera& camera)
         ImGui::Separator();
 
         ImGui::Text("Camera position: %.4f, %.4f, %.4f", camera.transform.pos.x, camera.transform.pos.y, camera.transform.pos.z);
+        ImGui::Separator();
+
+        ImGui::Text("Particle count: %d", particleCount);
     }
     ImGui::End();
 }
@@ -119,8 +122,8 @@ std::vector<glm::vec3> SphereModel(int rings, int slices)
     return verts;
 }
 
-#define PARTICLE_COUNT 1024*3
-#define MAX_PARTICLE_COUNT 4096*2
+#define PARTICLE_COUNT 1024*4
+#define MAX_PARTICLE_COUNT 4096*8
 struct ParticleData
 {
     glm::vec4 posAndMass;
@@ -161,8 +164,6 @@ void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader&
         integrationCompShader.SetUniform("box", box);
         glDispatchCompute(particleCount, 1, 1);
         glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
-
-        glGetNamedBufferSubData(particleDataBufId, 0, sizeof(ParticleData) * MAX_PARTICLE_COUNT, particleData.data());
 }
 
 int main(void) 
@@ -255,14 +256,15 @@ int main(void)
     unsigned int skyboxCubemapId;
     glGenTextures(1, &skyboxCubemapId);
     glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemapId);
-    for (int i = 0; i < 6; i++)
+    bool skyboxLoaded = true;
+    for (int i = 0; i < 6 && skyboxLoaded; i++)
     {
         int width, height, n;
         unsigned char* img = stbi_load(skyboxImages[i], &width, &height, &n, 3);
         if (!img)
         {
-            printf("lmao\n");
-            return 0; // For the time being just die
+            printf("Failed loading image %s", skyboxImages[i]);
+            skyboxLoaded = false;
         }
 
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, img);
@@ -315,7 +317,7 @@ int main(void)
         {
             particleData[i].posAndMass = glm::vec4(
                     (float)(std::rand() % 1000) / 1000.f * box.x,
-                    (float)(std::rand() % 1000) / 1000.f * (box.y / 50.f) + box.y / 5.f,
+                    (float)(std::rand() % 1000) / 1000.f * (box.y / 10.f) + box.y / 5.f,
                     (float)(std::rand() % 1000) / 1000.f * box.z,
                     1.f);
             particleData[i].vel = glm::vec4(0.f);
@@ -323,10 +325,10 @@ int main(void)
         else
         {
             particleData[i].posAndMass = glm::vec4(0.5f,
-                    (float)(std::rand() % 1000) / 1000.f * 5.f + 30.f,
+                    (float)(std::rand() % 1000) / 1000.f * 5.f + 10.f,
                     (float)(std::rand() % 1000) / 1000.f * 5.f + (box.z / 2),
                     1.f);
-            particleData[i].vel = glm::vec4(20.f, -15.f, 0.f, 0.f);
+            particleData[i].vel = glm::vec4(40.f, -15.f, 0.f, 0.f);
         }
 
         particleData[i].props = glm::vec4(0.f, 0.f, 0.f, 0.f); 
@@ -346,6 +348,7 @@ int main(void)
     Shader integrationCompShader("../src/sph_integration.comp");
     Shader passthroughShader("../src/passthrough.vert", "../src/passthrough.frag");
     Shader simpleModelShader("../src/simple_model.vert", "../src/simple_model.frag");
+    Shader simpleInstancedModelShader("../src/instanced_simple_model.vert", "../src/simple_model.frag");
     Shader skyboxShader("../src/skybox.vert", "../src/skybox.frag");
 
     breakGlError = true;
@@ -358,11 +361,27 @@ int main(void)
     unsigned int sphereVao;
     glGenVertexArrays(1, &sphereVao);
     glBindVertexArray(sphereVao);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+    glEnableVertexAttribArray(3);
+    glEnableVertexAttribArray(4);
 
     unsigned int sphereVbo;
     glGenBuffers(1, &sphereVbo);
     glBindBuffer(GL_ARRAY_BUFFER, sphereVbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * sphere.size(), sphere.data(), GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+
+    glBindBuffer(GL_ARRAY_BUFFER, particleDataId);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), NULL);
+    glVertexAttribDivisor(1, 1);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), (void*)sizeof(glm::vec4));
+    glVertexAttribDivisor(2, 1);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), (void*)(sizeof(glm::vec4) * 2));
+    glVertexAttribDivisor(3, 1);
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), (void*)(sizeof(glm::vec4) * 3));
+    glVertexAttribDivisor(4, 1);
 
     glEnable(GL_DEPTH_TEST);
 
@@ -382,48 +401,38 @@ int main(void)
         if (!simulationPaused)
             runSimulationCompute(window, densityCompShader, forceCompShader, integrationCompShader, particleCount, particleData, particleDataId, glm::vec3(0.f, -1.f, 0.f) * gravityScale, box);
 
-        bool keyDown = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
-        for (int i = 0; i < particleCount; i++)
+        if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
         {
-            if (keyDown)
+            glGetNamedBufferSubData(particleDataId, 0, sizeof(ParticleData) * MAX_PARTICLE_COUNT, particleData.data());
+
+            for (int i = 0; i < particleCount; i++)
             {
                 printf("x: %f, y: %f, z: %f, mass: %f\n", particleData[i].posAndMass.x, particleData[i].posAndMass.y, particleData[i].posAndMass.z, particleData[i].posAndMass.w);
                 printf("\tvel x: %f, y: %f, z: %f\n", particleData[i].vel.x, particleData[i].vel.y, particleData[i].vel.z);
                 printf("\tdensity %f, pressure: %f\n", particleData[i].props.x, particleData[i].props.y);
                 printf("\tforce : %f, %f, %f\n", particleData[i].force.x, particleData[i].force.y, particleData[i].force.z);
             }
-        }
-        if (keyDown)
             printf("\n");
+        }
 
-        simpleModelShader.Use();
-        simpleModelShader.SetUniform("projection", camera.projection);
-        simpleModelShader.SetUniform("view", camera.View());
         Transform t;
 
         glBindVertexArray(sphereVao);
-        //for (int i = 1; i < 4; i++)
-        //    glDisableVertexAttribArray(i);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+        t.scale = glm::vec3(0.f);
+        t.scale = glm::vec3(0.6f);
+        simpleInstancedModelShader.Use();
+        simpleInstancedModelShader.SetUniform("projection", camera.projection);
+        simpleInstancedModelShader.SetUniform("view", camera.View());
+        simpleInstancedModelShader.SetUniform("cameraPos", camera.transform.pos);
+        simpleInstancedModelShader.SetUniform("model", t.Model());
+        glDrawArraysInstanced(GL_TRIANGLES, 0, sphere.size(), particleCount);
 
-        simpleModelShader.SetUniform("cameraPos", camera.transform.pos);
-        for (int i = 0; i < particleData.size(); i++)
-        {
-            simpleModelShader.SetUniform("density", particleData[i].props.x / 2);
-            simpleModelShader.SetUniform("pressure", particleData[i].props.y /2);
-            simpleModelShader.SetUniform("force", glm::vec3(particleData[i].force.x, particleData[i].force.y, particleData[i].force.z));
-
-            t.pos = glm::vec3(particleData[i].posAndMass.x,
-                    particleData[i].posAndMass.y,
-                    particleData[i].posAndMass.z);
-            t.scale = glm::vec3(0.4f);
-            simpleModelShader.SetUniform("model", t.Model());
-            glDrawArrays(GL_TRIANGLES, 0, sphere.size());
-        }
-
-        // Ground
         glBindVertexArray(cubeVao);
+        // Ground
+        simpleModelShader.Use();
+        simpleModelShader.SetUniform("projection", camera.projection);
+        simpleModelShader.SetUniform("view", camera.View());
+
         simpleModelShader.SetUniform("density", 0.5f);
         static glm::vec3 groundPos(box.x/ 2.f, -0.6, box.z / 2.f);
         static glm::vec3 groundScale(40.f, 0.2f, 30.f);
@@ -433,8 +442,8 @@ int main(void)
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
         // Skybox
-        static bool skyboxEnabled = true;
-        if (skyboxEnabled)
+        static bool skyboxEnabled = skyboxLoaded;
+        if (skyboxEnabled && skyboxLoaded)
         {
             glDepthFunc(GL_LEQUAL);
             skyboxShader.Use();
@@ -454,11 +463,20 @@ int main(void)
         {
             ImGui::Checkbox("Pause simulation", &simulationPaused);
             ImGui::SliderFloat("Gravity", &gravityScale, 0.f, 100.f);
-            ImGui::Checkbox("Skybox", &skyboxEnabled);
+
+            if (skyboxLoaded)
+            {
+                ImGui::Checkbox("Skybox", &skyboxEnabled);
+            }
+            else
+            {
+                bool unused;
+                ImGui::Checkbox("Skybox (failed loading images)", &unused);
+            }
         }
         ImGui::End();
 
-        ShowFPS(camera);
+        ShowInfo(camera, particleCount);
         ImGuiWrapper::Render();
 
         glfwSwapBuffers(window);
