@@ -197,7 +197,7 @@ int main(void)
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
 
-    float skyboxVertices[] = {
+    float cubeVertices[] = {
         // positions          
         -1.0f,  1.0f, -1.0f,
         -1.0f, -1.0f, -1.0f,
@@ -274,12 +274,12 @@ int main(void)
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);  
 
-    unsigned int skyboxVao, skyboxVbo;
-    glGenVertexArrays(1, &skyboxVao);
-    glGenBuffers(1, &skyboxVbo);
-    glBindVertexArray(skyboxVao);
-    glBindBuffer(GL_ARRAY_BUFFER, skyboxVbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
+    unsigned int cubeVao, cubeVbo;
+    glGenVertexArrays(1, &cubeVao);
+    glGenBuffers(1, &cubeVbo);
+    glBindVertexArray(cubeVao);
+    glBindBuffer(GL_ARRAY_BUFFER, cubeVbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cubeVertices), &cubeVertices, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
 
@@ -318,6 +318,7 @@ int main(void)
                     (float)(std::rand() % 1000) / 1000.f * (box.y / 50.f) + box.y / 5.f,
                     (float)(std::rand() % 1000) / 1000.f * box.z,
                     1.f);
+            particleData[i].vel = glm::vec4(0.f);
         }
         else
         {
@@ -325,9 +326,9 @@ int main(void)
                     (float)(std::rand() % 1000) / 1000.f * 5.f + 30.f,
                     (float)(std::rand() % 1000) / 1000.f * 5.f + (box.z / 2),
                     1.f);
+            particleData[i].vel = glm::vec4(20.f, -15.f, 0.f, 0.f);
         }
 
-        particleData[i].vel = glm::vec4(20.f, -15.f, 0.f, 0.f);
         particleData[i].props = glm::vec4(0.f, 0.f, 0.f, 0.f); 
         particleData[i].force = glm::vec4(0.f, 0.f, 0.f, 0.f); 
     }
@@ -377,7 +378,9 @@ int main(void)
         ImGuiWrapper::PreRender();
 
         static float gravityScale = 20;
-        runSimulationCompute(window, densityCompShader, forceCompShader, integrationCompShader, particleCount, particleData, particleDataId, glm::vec3(0.f, -1.f, 0.f) * gravityScale, box);
+        static bool simulationPaused = true;
+        if (!simulationPaused)
+            runSimulationCompute(window, densityCompShader, forceCompShader, integrationCompShader, particleCount, particleData, particleDataId, glm::vec3(0.f, -1.f, 0.f) * gravityScale, box);
 
         bool keyDown = glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS;
         for (int i = 0; i < particleCount; i++)
@@ -399,8 +402,8 @@ int main(void)
         Transform t;
 
         glBindVertexArray(sphereVao);
-        for (int i = 1; i < 4; i++)
-            glDisableVertexAttribArray(i);
+        //for (int i = 1; i < 4; i++)
+        //    glDisableVertexAttribArray(i);
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
 
@@ -419,28 +422,43 @@ int main(void)
             glDrawArrays(GL_TRIANGLES, 0, sphere.size());
         }
 
-        glDepthFunc(GL_LEQUAL);
-        skyboxShader.Use();
-        glm::mat4 viewProjection = camera.projection * glm::mat4(glm::mat3(camera.View()));
-        skyboxShader.SetUniform("viewProjection", viewProjection);
-        glBindVertexArray(skyboxVao);
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemapId);
+        // Ground
+        glBindVertexArray(cubeVao);
+        simpleModelShader.SetUniform("density", 0.5f);
+        static glm::vec3 groundPos(box.x/ 2.f, -0.6, box.z / 2.f);
+        static glm::vec3 groundScale(40.f, 0.2f, 30.f);
+        t.pos = groundPos;
+        t.scale = groundScale;
+        simpleModelShader.SetUniform("model", t.Model());
         glDrawArrays(GL_TRIANGLES, 0, 36);
-        glDepthFunc(GL_LESS);
+
+        // Skybox
+        static bool skyboxEnabled = true;
+        if (skyboxEnabled)
+        {
+            glDepthFunc(GL_LEQUAL);
+            skyboxShader.Use();
+            glm::mat4 viewProjection = camera.projection * glm::mat4(glm::mat3(camera.View()));
+            skyboxShader.SetUniform("viewProjection", viewProjection);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, skyboxCubemapId);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+            glDepthFunc(GL_LESS);
+        }
 
         if (particleCount < MAX_PARTICLE_COUNT && glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS)
             particleCount += 2;
 
-        ShowFPS(camera);
-
         static bool settingsOpen = true;
         if (ImGui::Begin("Settings", &settingsOpen))
         {
+            ImGui::Checkbox("Pause simulation", &simulationPaused);
             ImGui::SliderFloat("Gravity", &gravityScale, 0.f, 100.f);
+            ImGui::Checkbox("Skybox", &skyboxEnabled);
         }
         ImGui::End();
 
+        ShowFPS(camera);
         ImGuiWrapper::Render();
 
         glfwSwapBuffers(window);
