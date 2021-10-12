@@ -122,6 +122,17 @@ std::vector<glm::vec3> SphereModel(int rings, int slices)
     return verts;
 }
 
+std::vector<glm::vec3> QuadModel()
+{
+    return std::vector<glm::vec3>
+    {
+        //glm::vec3(-1.f, -1.f,  0.f), glm::vec3( 1.f,  1.f,  0.f), glm::vec3(-1.f,  1.f,  0.f), 
+        //glm::vec3( 1.f,  1.f,  0.f), glm::vec3(-1.f, -1.f,  0.f), glm::vec3( 1.f, -1.f,  0.f), 
+        glm::vec3(-1.f, -1.f,  0.f), glm::vec3(-1.f,  1.f,  0.f), glm::vec3( 1.f,  1.f,  0.f), 
+        glm::vec3( 1.f,  1.f,  0.f), glm::vec3( 1.f, -1.f,  0.f), glm::vec3(-1.f, -1.f,  0.f), 
+    };
+}
+
 #define PARTICLE_COUNT 1024*10
 #define MAX_PARTICLE_COUNT 4096*32
 struct ParticleData
@@ -357,6 +368,8 @@ int main(void)
     Shader simpleModelShader("../src/simple_model.vert", "../src/simple_model.frag");
     Shader simpleInstancedModelShader("../src/instanced_simple_model.vert", "../src/simple_model.frag");
     Shader skyboxShader("../src/skybox.vert", "../src/skybox.frag");
+    Shader pointShader("../src/point.vert", "../src/point.frag");
+    Shader quadSpriteSphereShader("../src/quad_sprite_sphere.vert", "../src/quad_sprite_sphere.frag");
 
     breakGlError = true;
 
@@ -390,8 +403,52 @@ int main(void)
     glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), (void*)(sizeof(glm::vec4) * 3));
     glVertexAttribDivisor(4, 1);
 
+    unsigned int pointVao;
+    glGenVertexArrays(1, &pointVao);
+    glBindVertexArray(pointVao);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+    glEnableVertexAttribArray(3);
+    glBindBuffer(GL_ARRAY_BUFFER, particleDataId);
+    glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), NULL);
+    glVertexAttribDivisor(0, 1);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), (void*)sizeof(glm::vec4));
+    glVertexAttribDivisor(1, 1);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), (void*)(sizeof(glm::vec4) * 2));
+    glVertexAttribDivisor(2, 1);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), (void*)(sizeof(glm::vec4) * 3));
+    glVertexAttribDivisor(3, 1);
+
+    std::vector<glm::vec3> quad = QuadModel();
+    unsigned int quadVao;
+    glGenVertexArrays(1, &quadVao);
+    glBindVertexArray(quadVao);
+    glEnableVertexAttribArray(0);
+    glEnableVertexAttribArray(1);
+    glEnableVertexAttribArray(2);
+    glEnableVertexAttribArray(3);
+    glEnableVertexAttribArray(4);
+    unsigned int quadVbo;
+    glGenBuffers(1, &quadVbo);
+    glBindBuffer(GL_ARRAY_BUFFER, quadVbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(glm::vec3) * quad.size(), quad.data(), GL_DYNAMIC_DRAW);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, NULL);
+    glBindBuffer(GL_ARRAY_BUFFER, particleDataId);
+    glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), NULL);
+    glVertexAttribDivisor(1, 1);
+    glVertexAttribPointer(2, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), (void*)sizeof(glm::vec4));
+    glVertexAttribDivisor(2, 1);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), (void*)(sizeof(glm::vec4) * 2));
+    glVertexAttribDivisor(3, 1);
+    glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(ParticleData), (void*)(sizeof(glm::vec4) * 3));
+    glVertexAttribDivisor(4, 1);
+
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+
+    glEnable(GL_PROGRAM_POINT_SIZE);
 
     Camera camera;
     camera.transform.pos = glm::vec3(15, 30, -90);
@@ -410,7 +467,7 @@ int main(void)
         static float attractorInnerRadius = 10.f;
         static float attractorOutterRadius = 25.f;
         static float attractorStrength = 1000.f;
-        static bool attractorEnabled = true;
+        static bool attractorEnabled = false;
         if (!simulationPaused)
         {
             runSimulationCompute(window, densityCompShader, forceCompShader, integrationCompShader, particleCount, particleData,
@@ -434,18 +491,67 @@ int main(void)
 
         Transform t;
 
-        static bool renderParticlesAsSpheres = true;
-        if (renderParticlesAsSpheres)
+#define IDENTITY(VALUE) VALUE
+#define STRINGIFY(VALUE) #VALUE
+#define RENDER_AS_VALUES(F)      \
+        F(POINTS),               \
+        F(QUADS),                \
+        F(QUAD_SPRITE_SPHERES),  \
+        F(SPHERES),              \
+        F(NONE),                 \
+        F(RENDER_AS_COUNT)  
+
+        static const char* renderAsStrings[] = { RENDER_AS_VALUES(STRINGIFY) };
+        static enum renderAsEnum
         {
-            glBindVertexArray(sphereVao);
-            t.scale = glm::vec3(0.f);
-            t.scale = glm::vec3(0.6f);
-            simpleInstancedModelShader.Use();
-            simpleInstancedModelShader.SetUniform("projection", camera.projection);
-            simpleInstancedModelShader.SetUniform("view", camera.View());
-            simpleInstancedModelShader.SetUniform("cameraPos", camera.transform.pos);
-            simpleInstancedModelShader.SetUniform("model", t.Model());
-            glDrawArraysInstanced(GL_TRIANGLES, 0, sphere.size(), particleCount);
+            RENDER_AS_VALUES(IDENTITY)
+        } renderAs;
+        switch (renderAs)
+        {
+            case POINTS:
+                glBindVertexArray(pointVao);
+                t.scale = glm::vec3(1.f);
+                pointShader.Use();
+                pointShader.SetUniform("projection", camera.projection);
+                pointShader.SetUniform("view", camera.View());
+                pointShader.SetUniform("cameraPos", camera.transform.pos);
+                pointShader.SetUniform("model", t.Model());
+                glDrawArraysInstanced(GL_POINTS, 0, 1, particleCount);
+                break;
+            case QUADS:
+                glBindVertexArray(quadVao);
+                t.scale = glm::vec3(1.0f);
+                t.rot = camera.transform.rot;
+                simpleInstancedModelShader.Use();
+                simpleInstancedModelShader.SetUniform("projection", camera.projection);
+                simpleInstancedModelShader.SetUniform("view", camera.View());
+                simpleInstancedModelShader.SetUniform("cameraPos", camera.transform.pos);
+                simpleInstancedModelShader.SetUniform("model", t.Model());
+                glDrawArraysInstanced(GL_TRIANGLES, 0, quad.size(), particleCount);
+                t.rot = glm::quat();
+                break;
+            case QUAD_SPRITE_SPHERES:
+                glBindVertexArray(quadVao);
+                t.scale = glm::vec3(1.0f);
+                t.rot = camera.transform.rot;
+                quadSpriteSphereShader.Use();
+                quadSpriteSphereShader.SetUniform("projection", camera.projection);
+                quadSpriteSphereShader.SetUniform("view", camera.View());
+                quadSpriteSphereShader.SetUniform("cameraPos", camera.transform.pos);
+                quadSpriteSphereShader.SetUniform("model", t.Model());
+                glDrawArraysInstanced(GL_TRIANGLES, 0, quad.size(), particleCount);
+                t.rot = glm::quat();
+                break;
+            case SPHERES:
+                glBindVertexArray(sphereVao);
+                t.scale = glm::vec3(0.6f);
+                simpleInstancedModelShader.Use();
+                simpleInstancedModelShader.SetUniform("projection", camera.projection);
+                simpleInstancedModelShader.SetUniform("view", camera.View());
+                simpleInstancedModelShader.SetUniform("cameraPos", camera.transform.pos);
+                simpleInstancedModelShader.SetUniform("model", t.Model());
+                glDrawArraysInstanced(GL_TRIANGLES, 0, sphere.size(), particleCount);
+                break;
         }
 
         glBindVertexArray(cubeVao);
@@ -519,12 +625,21 @@ int main(void)
             if (skyboxLoaded)
             {
                 ImGui::Checkbox("Skybox", &skyboxEnabled);
-                ImGui::Checkbox("Particles as spheres", &renderParticlesAsSpheres);
             }
             else
             {
                 bool unused;
                 ImGui::Checkbox("Skybox (failed loading images)", &unused);
+            }
+
+            if (ImGui::TreeNodeEx("Particle render options", ImGuiTreeNodeFlags_DefaultOpen))
+            {
+                for (int i = 0; i < RENDER_AS_COUNT; i++)
+                {
+                    if (ImGui::RadioButton(renderAsStrings[i], renderAs == i))
+                        renderAs = (renderAsEnum) i;
+                }
+                ImGui::TreePop();
             }
         }
         ImGui::End();

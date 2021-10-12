@@ -1,0 +1,30 @@
+#version 330 core
+layout (location = 0) in vec3 pos;
+layout (location = 1) in vec4 particlePos;
+layout (location = 2) in vec4 velocity;
+layout (location = 3) in vec4 props;
+layout (location = 4) in vec4 force;
+
+uniform mat4 projection;
+uniform mat4 view;
+uniform mat4 model;
+
+out vec4 FragPos;
+out float Density;
+out vec2 Uv;
+out vec4 EyeSpacePos;
+
+void main()
+{
+    mat4 localModel = model;
+    localModel[3][0] = particlePos.x;
+    localModel[3][1] = particlePos.y;
+    localModel[3][2] = particlePos.z;
+
+    Density = props.x;
+    Uv = pos.xy;
+
+    FragPos = projection * view * localModel * vec4(pos.xyz, 1.f);
+    EyeSpacePos = view * localModel * vec4(pos.xyz, 1.f);
+    gl_Position = FragPos;
+}
