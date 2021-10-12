@@ -1,5 +1,5 @@
 #version 430
-layout(local_size_x = 1) in;
+layout(local_size_x = 256) in;
 
 struct ParticleData
 {
@@ -19,7 +19,8 @@ uniform vec3 gravity;
 uniform vec3 box;
 
 uniform vec3 attractorPos;
-uniform float attractorRadius;
+uniform float attractorInnerRadius;
+uniform float attractorOutterRadius;
 uniform float attractorStrength;
 
 void main()
@@ -28,9 +29,9 @@ void main()
 
     vec3 toAttractor = attractorPos - particles[index].posAndMass.xyz;
     float dist = length(toAttractor);
-    float distPow = pow(dist, 1.5f);
+    float distPow = pow(dist, 1.3f);
 
-    if (dist < attractorRadius && dist > 0.5f)
+    if (dist < attractorOutterRadius && dist > attractorInnerRadius)
     {
         //particle.force.xyz += normalize(toAttractor) * attractorStrength / distPow;
         particles[index].force.xyz += normalize(toAttractor) * attractorStrength / distPow;

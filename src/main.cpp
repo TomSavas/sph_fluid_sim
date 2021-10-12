@@ -122,8 +122,8 @@ std::vector<glm::vec3> SphereModel(int rings, int slices)
     return verts;
 }
 
-#define PARTICLE_COUNT 1024*4
-#define MAX_PARTICLE_COUNT 4096*8
+#define PARTICLE_COUNT 1024*10
+#define MAX_PARTICLE_COUNT 4096*32
 struct ParticleData
 {
     glm::vec4 posAndMass;
@@ -134,7 +134,7 @@ struct ParticleData
 
 void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader& forceCompShader, Shader& integrationCompShader, int particleCount,
         std::vector<ParticleData>& particleData, unsigned int particleDataBufId, glm::vec3 gravity, glm::vec3 box,
-        glm::vec3 attractorPos, float attractorRadius, float attractorStrength)
+        glm::vec3 attractorPos, float attractorInnerRadius, float attractorOutterRadius, float attractorStrength)
 {
         static const float smoothingRadius = 1.0f;
         static const float poly6Const = 315.f / (64.f * PI * pow(smoothingRadius, 9.f));
@@ -145,7 +145,7 @@ void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader&
         densityCompShader.SetUniform("densityReference", 1.f);
         densityCompShader.SetUniform("pressureConst", 250.f);
         densityCompShader.SetUniform("poly6Const", poly6Const);
-        glDispatchCompute(particleCount, 1, 1);
+        glDispatchCompute(particleCount / 256.f, 1, 1);
         glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
         static const float spikyConst = -45.f / (PI * pow(smoothingRadius, 6));
@@ -157,7 +157,7 @@ void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader&
         forceCompShader.SetUniform("spikyConst", spikyConst);
         forceCompShader.SetUniform("laplacianConst", -spikyConst);
         forceCompShader.SetUniform("gravity", gravity);
-        glDispatchCompute(particleCount, 1, 1);
+        glDispatchCompute(particleCount / 256.f, 1, 1);
         glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 
         integrationCompShader.Use();
@@ -165,9 +165,10 @@ void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader&
         integrationCompShader.SetUniform("gravity", gravity);
         integrationCompShader.SetUniform("box", box);
         integrationCompShader.SetUniform("attractorPos", attractorPos);
-        integrationCompShader.SetUniform("attractorRadius", attractorRadius);
+        integrationCompShader.SetUniform("attractorInnerRadius", attractorInnerRadius);
+        integrationCompShader.SetUniform("attractorOutterRadius", attractorOutterRadius);
         integrationCompShader.SetUniform("attractorStrength", attractorStrength);
-        glDispatchCompute(particleCount, 1, 1);
+        glDispatchCompute(particleCount / 256.f, 1, 1);
         glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
 }
 
@@ -315,7 +316,7 @@ int main(void)
     printf("sizeof(ParticleData) * particleData.size() = %d\n", sizeof(ParticleData) * particleData.size());
 
     int particleCount = PARTICLE_COUNT;
-    glm::vec3 box(35.f, 100.f, 25.f);
+    glm::vec3 box(35.f * 1.5, 100.f * 1.5, 15.f * 1.5);
     for (int i = 0; i < MAX_PARTICLE_COUNT; i++)
     {
         if (i < PARTICLE_COUNT)
@@ -329,8 +330,9 @@ int main(void)
         }
         else
         {
-            particleData[i].posAndMass = glm::vec4(0.5f,
-                    (float)(std::rand() % 1000) / 1000.f * 5.f + 10.f,
+            particleData[i].posAndMass = glm::vec4(
+                    (float)(std::rand() % 1000) / 1000.f * box.x / 10.f + 0.1f,
+                    (float)(std::rand() % 1000) / 1000.f * 5.f + (box.y / 8),
                     (float)(std::rand() % 1000) / 1000.f * 5.f + (box.z / 2),
                     1.f);
             particleData[i].vel = glm::vec4(40.f, -15.f, 0.f, 0.f);
@@ -389,6 +391,7 @@ int main(void)
     glVertexAttribDivisor(4, 1);
 
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
 
     Camera camera;
     camera.transform.pos = glm::vec3(15, 30, -90);
@@ -404,13 +407,15 @@ int main(void)
         static float gravityScale = 20;
         static bool simulationPaused = true;
         static Transform attractorTransform(glm::vec3(box.x / 2.f, box.y / 2.f, box.z / 2.f));
-        static float attractorRadius = 50.f;
+        static float attractorInnerRadius = 10.f;
+        static float attractorOutterRadius = 25.f;
         static float attractorStrength = 1000.f;
         static bool attractorEnabled = true;
         if (!simulationPaused)
         {
             runSimulationCompute(window, densityCompShader, forceCompShader, integrationCompShader, particleCount, particleData,
-                    particleDataId, glm::vec3(0.f, -1.f, 0.f) * gravityScale, box, attractorTransform.pos, attractorRadius, attractorStrength * (attractorEnabled ? 1.f : 0.f));
+                    particleDataId, glm::vec3(0.f, -1.f, 0.f) * gravityScale, box, attractorTransform.pos, attractorInnerRadius, attractorOutterRadius,
+                    attractorStrength * (attractorEnabled ? 1.f : 0.f));
         }
 
         if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
@@ -429,15 +434,19 @@ int main(void)
 
         Transform t;
 
-        glBindVertexArray(sphereVao);
-        t.scale = glm::vec3(0.f);
-        t.scale = glm::vec3(0.6f);
-        simpleInstancedModelShader.Use();
-        simpleInstancedModelShader.SetUniform("projection", camera.projection);
-        simpleInstancedModelShader.SetUniform("view", camera.View());
-        simpleInstancedModelShader.SetUniform("cameraPos", camera.transform.pos);
-        simpleInstancedModelShader.SetUniform("model", t.Model());
-        glDrawArraysInstanced(GL_TRIANGLES, 0, sphere.size(), particleCount);
+        static bool renderParticlesAsSpheres = true;
+        if (renderParticlesAsSpheres)
+        {
+            glBindVertexArray(sphereVao);
+            t.scale = glm::vec3(0.f);
+            t.scale = glm::vec3(0.6f);
+            simpleInstancedModelShader.Use();
+            simpleInstancedModelShader.SetUniform("projection", camera.projection);
+            simpleInstancedModelShader.SetUniform("view", camera.View());
+            simpleInstancedModelShader.SetUniform("cameraPos", camera.transform.pos);
+            simpleInstancedModelShader.SetUniform("model", t.Model());
+            glDrawArraysInstanced(GL_TRIANGLES, 0, sphere.size(), particleCount);
+        }
 
         glBindVertexArray(cubeVao);
         // Ground
@@ -446,8 +455,8 @@ int main(void)
         simpleModelShader.SetUniform("view", camera.View());
 
         simpleModelShader.SetUniform("density", 0.5f);
-        static glm::vec3 groundPos(box.x/ 2.f, -0.6, box.z / 2.f);
-        static glm::vec3 groundScale(40.f, 0.2f, 30.f);
+        static glm::vec3 groundPos(box.x / 2.f, -0.6, box.z / 2.f);
+        static glm::vec3 groundScale(40.f * 1.5, 0.2f, 30.f * 1.5);
         t.pos = groundPos;
         t.scale = groundScale;
         simpleModelShader.SetUniform("model", t.Model());
@@ -461,7 +470,7 @@ int main(void)
         {
             glm::vec<2, double> mouseDiff = mousePos - lastMousePos;
             glm::vec3 movement = camera.transform.Right() * (float)mouseDiff.x + camera.transform.Up() * -(float)mouseDiff.y;
-            attractorTransform.pos += movement * 0.016f * 2.f;
+            attractorTransform.pos += movement * 0.016f * 8.f;
         }
         simpleModelShader.SetUniform("density", attractorEnabled ? 5.f : 0.f);
         lastMousePos = mousePos;
@@ -485,8 +494,16 @@ int main(void)
             glDepthFunc(GL_LESS);
         }
 
-        if (particleCount < MAX_PARTICLE_COUNT && glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS)
-            particleCount += 4;
+        const int particlesPer10Frames = 256;
+        const int particleIncrease = 256;
+        const int cooldownDuration = particleIncrease / particlesPer10Frames * 10;
+        static int cooldown = 0;
+        cooldown = cooldown-1 < 0 ? 0 : cooldown-1;
+        if (cooldown <= 0 && particleCount < MAX_PARTICLE_COUNT && glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS)
+        {
+            particleCount += 256; 
+            cooldown = cooldownDuration;
+        }
 
         static bool settingsOpen = true;
         if (ImGui::Begin("Settings", &settingsOpen))
@@ -495,12 +512,14 @@ int main(void)
             ImGui::SliderFloat("Gravity", &gravityScale, 0.f, 100.f);
             ImGui::Separator();
             ImGui::Checkbox("Attractor enabled", &attractorEnabled);
-            ImGui::SliderFloat("Attractor radius", &attractorRadius, 0.f, 100.f);
+            ImGui::SliderFloat("Attractor inner radius", &attractorInnerRadius, 0.f, 100.f);
+            ImGui::SliderFloat("Attractor oututer radius", &attractorOutterRadius, 0.f, 100.f);
             ImGui::SliderFloat("Attractor strength", &attractorStrength, 0.f, 2000.f);
 
             if (skyboxLoaded)
             {
                 ImGui::Checkbox("Skybox", &skyboxEnabled);
+                ImGui::Checkbox("Particles as spheres", &renderParticlesAsSpheres);
             }
             else
             {
