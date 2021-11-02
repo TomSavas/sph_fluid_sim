@@ -134,7 +134,7 @@ std::vector<glm::vec3> QuadModel()
 }
 
 #define PARTICLE_COUNT 1024*10
-#define MAX_PARTICLE_COUNT 4096*32
+#define MAX_PARTICLE_COUNT 4096*16
 struct ParticleData
 {
     glm::vec4 posAndMass;
@@ -181,6 +181,31 @@ void runSimulationCompute(GLFWwindow* window, Shader& densityCompShader, Shader&
         integrationCompShader.SetUniform("attractorStrength", attractorStrength);
         glDispatchCompute(particleCount / 256.f, 1, 1);
         glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+}
+
+void initParticleData(unsigned int ssboId, std::vector<ParticleData>& particleData, int startIndex, int particleCount, glm::vec3 initialDir, float initialVel, glm::vec3 initialPos, glm::vec3 posSpread, bool pushDataToGpu = true)
+{
+    glm::vec4 velocity = glm::vec4(glm::normalize(initialDir) * initialVel, 0.f);
+
+    for (int i = startIndex; i < startIndex + particleCount; i++)
+    {
+        particleData[i].posAndMass = glm::vec4(
+                ((float)std::rand() / (float)RAND_MAX - 0.5f) * 2.f * posSpread.x + initialPos.x,
+                ((float)std::rand() / (float)RAND_MAX - 0.5f) * 2.f * posSpread.y + initialPos.y,
+                ((float)std::rand() / (float)RAND_MAX - 0.5f) * 2.f * posSpread.z + initialPos.z,
+                1.f);
+        particleData[i].vel = velocity;
+
+        particleData[i].props = glm::vec4(0.f, 0.f, 0.f, 0.f); 
+        particleData[i].force = glm::vec4(0.f, 0.f, 0.f, 0.f); 
+    }
+
+    if (pushDataToGpu)
+    {
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssboId);
+        glBufferSubData(GL_SHADER_STORAGE_BUFFER, sizeof(ParticleData) * startIndex, sizeof(ParticleData) * particleCount, &particleData[startIndex]);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+    }
 }
 
 int main(void) 
@@ -326,38 +351,22 @@ int main(void)
     printf("particleData.size() = %d\n", particleData.size());
     printf("sizeof(ParticleData) * particleData.size() = %d\n", sizeof(ParticleData) * particleData.size());
 
+
+    static glm::vec3 initialParticleDirection = glm::vec3(1.f, -0.9f, 0.f);
+    static float initialParticleVelocity = 65.f;
+    static glm::vec3 initialParticlePos = glm::vec3(10.f, 30.f, 10.f);
+    static glm::vec3 initialParticleSpread = glm::vec3(3.f, 3.f, 3.f);
+
     int particleCount = PARTICLE_COUNT;
     glm::vec3 box(35.f * 1.5, 100.f * 1.5, 15.f * 1.5);
-    for (int i = 0; i < MAX_PARTICLE_COUNT; i++)
-    {
-        if (i < PARTICLE_COUNT)
-        {
-            particleData[i].posAndMass = glm::vec4(
-                    (float)(std::rand() % 1000) / 1000.f * box.x,
-                    (float)(std::rand() % 1000) / 1000.f * (box.y / 10.f) + box.y / 5.f,
-                    (float)(std::rand() % 1000) / 1000.f * box.z,
-                    1.f);
-            particleData[i].vel = glm::vec4(0.f);
-        }
-        else
-        {
-            particleData[i].posAndMass = glm::vec4(
-                    (float)(std::rand() % 1000) / 1000.f * box.x / 10.f + 0.1f,
-                    (float)(std::rand() % 1000) / 1000.f * 5.f + (box.y / 8),
-                    (float)(std::rand() % 1000) / 1000.f * 5.f + (box.z / 2),
-                    1.f);
-            particleData[i].vel = glm::vec4(40.f, -15.f, 0.f, 0.f);
-        }
-
-        particleData[i].props = glm::vec4(0.f, 0.f, 0.f, 0.f); 
-        particleData[i].force = glm::vec4(0.f, 0.f, 0.f, 0.f); 
-    }
 
     unsigned int particleDataId;
     glGenBuffers(1, &particleDataId);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, particleDataId);
-    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(ParticleData) * MAX_PARTICLE_COUNT, particleData.data(), GL_DYNAMIC_DRAW);
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, particleDataId);
+    initParticleData(particleDataId, particleData, 0, particleCount, initialParticleDirection, 0.f, glm::vec3(26.f, 40.f, 10.f), glm::vec3(25.f, 8.f, 15.f), false);
+    initParticleData(particleDataId, particleData, particleCount, MAX_PARTICLE_COUNT - particleCount, initialParticleDirection, initialParticleVelocity, initialParticlePos, initialParticleSpread, false);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(ParticleData) * MAX_PARTICLE_COUNT, particleData.data(), GL_DYNAMIC_DRAW);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
     Shader compShader("../src/fluid_sim.comp");
@@ -468,11 +477,47 @@ int main(void)
         static float attractorOutterRadius = 25.f;
         static float attractorStrength = 1000.f;
         static bool attractorEnabled = false;
+        static bool renderInactiveParticles = true;
+
+        static float smoothingRadius = 1.0f;
+        static float densityReference = 1.f;
+        static float pressureConst = 250.f;
+        static float viscosityConst = 0.188f;
         if (!simulationPaused)
         {
-            runSimulationCompute(window, densityCompShader, forceCompShader, integrationCompShader, particleCount, particleData,
-                    particleDataId, glm::vec3(0.f, -1.f, 0.f) * gravityScale, box, attractorTransform.pos, attractorInnerRadius, attractorOutterRadius,
-                    attractorStrength * (attractorEnabled ? 1.f : 0.f));
+            float poly6Const = 315.f / (64.f * PI * pow(smoothingRadius, 9.f));
+            float spikyConst = -45.f / (PI * pow(smoothingRadius, 6));
+
+            densityCompShader.Use();
+            densityCompShader.SetUniform("particleCount", particleCount);
+            densityCompShader.SetUniform("smoothingRadius", smoothingRadius);
+            densityCompShader.SetUniform("densityReference", densityReference);
+            densityCompShader.SetUniform("pressureConst", pressureConst);
+            densityCompShader.SetUniform("poly6Const", poly6Const);
+            glDispatchCompute(particleCount / 256.f, 1, 1);
+            glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+
+
+            forceCompShader.Use();
+            forceCompShader.SetUniform("particleCount", particleCount);
+            forceCompShader.SetUniform("smoothingRadius", smoothingRadius);
+            forceCompShader.SetUniform("viscosityConst", viscosityConst);
+            forceCompShader.SetUniform("spikyConst", spikyConst);
+            forceCompShader.SetUniform("laplacianConst", -spikyConst);
+            forceCompShader.SetUniform("gravity", glm::vec3(0.f, -1.f, 0.f) * gravityScale);
+            glDispatchCompute(particleCount / 256.f, 1, 1);
+            glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
+
+            integrationCompShader.Use();
+            integrationCompShader.SetUniform("timestep", 0.016f);
+            integrationCompShader.SetUniform("gravity", glm::vec3(0.f, -1.f, 0.f) * gravityScale);
+            integrationCompShader.SetUniform("box", box);
+            integrationCompShader.SetUniform("attractorPos", attractorTransform.pos);
+            integrationCompShader.SetUniform("attractorInnerRadius", attractorInnerRadius);
+            integrationCompShader.SetUniform("attractorOutterRadius", attractorOutterRadius);
+            integrationCompShader.SetUniform("attractorStrength", attractorStrength * (attractorEnabled ? 1.f : 0.f));
+            glDispatchCompute(particleCount / 256.f, 1, 1);
+            glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT);
         }
 
         if (glfwGetKey(window, GLFW_KEY_P) == GLFW_PRESS)
@@ -490,6 +535,7 @@ int main(void)
         }
 
         Transform t;
+        int renderedParticleCount = renderInactiveParticles ? MAX_PARTICLE_COUNT : particleCount;
 
 #define IDENTITY(VALUE) VALUE
 #define STRINGIFY(VALUE) #VALUE
@@ -516,7 +562,7 @@ int main(void)
                 pointShader.SetUniform("view", camera.View());
                 pointShader.SetUniform("cameraPos", camera.transform.pos);
                 pointShader.SetUniform("model", t.Model());
-                glDrawArraysInstanced(GL_POINTS, 0, 1, particleCount);
+                glDrawArraysInstanced(GL_POINTS, 0, 1, renderedParticleCount);
                 break;
             case QUADS:
                 glBindVertexArray(quadVao);
@@ -527,7 +573,7 @@ int main(void)
                 simpleInstancedModelShader.SetUniform("view", camera.View());
                 simpleInstancedModelShader.SetUniform("cameraPos", camera.transform.pos);
                 simpleInstancedModelShader.SetUniform("model", t.Model());
-                glDrawArraysInstanced(GL_TRIANGLES, 0, quad.size(), particleCount);
+                glDrawArraysInstanced(GL_TRIANGLES, 0, quad.size(), renderedParticleCount);
                 t.rot = glm::quat();
                 break;
             case QUAD_SPRITE_SPHERES:
@@ -539,7 +585,7 @@ int main(void)
                 quadSpriteSphereShader.SetUniform("view", camera.View());
                 quadSpriteSphereShader.SetUniform("cameraPos", camera.transform.pos);
                 quadSpriteSphereShader.SetUniform("model", t.Model());
-                glDrawArraysInstanced(GL_TRIANGLES, 0, quad.size(), particleCount);
+                glDrawArraysInstanced(GL_TRIANGLES, 0, quad.size(), renderedParticleCount);
                 t.rot = glm::quat();
                 break;
             case SPHERES:
@@ -550,7 +596,7 @@ int main(void)
                 simpleInstancedModelShader.SetUniform("view", camera.View());
                 simpleInstancedModelShader.SetUniform("cameraPos", camera.transform.pos);
                 simpleInstancedModelShader.SetUniform("model", t.Model());
-                glDrawArraysInstanced(GL_TRIANGLES, 0, sphere.size(), particleCount);
+                glDrawArraysInstanced(GL_TRIANGLES, 0, sphere.size(), renderedParticleCount);
                 break;
         }
 
@@ -615,12 +661,7 @@ int main(void)
         if (ImGui::Begin("Settings", &settingsOpen))
         {
             ImGui::Checkbox("Pause simulation", &simulationPaused);
-            ImGui::SliderFloat("Gravity", &gravityScale, 0.f, 100.f);
             ImGui::Separator();
-            ImGui::Checkbox("Attractor enabled", &attractorEnabled);
-            ImGui::SliderFloat("Attractor inner radius", &attractorInnerRadius, 0.f, 100.f);
-            ImGui::SliderFloat("Attractor oututer radius", &attractorOutterRadius, 0.f, 100.f);
-            ImGui::SliderFloat("Attractor strength", &attractorStrength, 0.f, 2000.f);
 
             if (skyboxLoaded)
             {
@@ -632,6 +673,7 @@ int main(void)
                 ImGui::Checkbox("Skybox (failed loading images)", &unused);
             }
 
+            ImGui::Checkbox("Render inactive particles", &renderInactiveParticles);
             if (ImGui::TreeNodeEx("Particle render options", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 for (int i = 0; i < RENDER_AS_COUNT; i++)
@@ -641,6 +683,30 @@ int main(void)
                 }
                 ImGui::TreePop();
             }
+            ImGui::Separator();
+
+            ImGui::Checkbox("Attractor enabled", &attractorEnabled);
+            ImGui::SliderFloat("Attractor inner radius", &attractorInnerRadius, 0.f, 100.f);
+            ImGui::SliderFloat("Attractor oututer radius", &attractorOutterRadius, 0.f, 100.f);
+            ImGui::SliderFloat("Attractor strength", &attractorStrength, 0.f, 2000.f);
+            ImGui::Separator();
+            
+            bool dirChanged = ImGui::SliderFloat3("Initial particle direction", &initialParticleDirection[0], -1.f, 1.f);
+            bool velChanged = ImGui::SliderFloat("Initial particle velocity", &initialParticleVelocity, 0.f, 200.f);
+            bool posChanged = ImGui::SliderFloat3("Initial particle pos", &initialParticlePos[0], -100.f, 100.f);
+            bool spreadChanged = ImGui::SliderFloat3("Initial particle spread", &initialParticleSpread[0], 0.f, 100.f);
+            if (dirChanged || velChanged || posChanged || spreadChanged)
+            {
+                glGetNamedBufferSubData(particleDataId, 0, sizeof(ParticleData) * MAX_PARTICLE_COUNT, particleData.data());
+                initParticleData(particleDataId, particleData, particleCount, MAX_PARTICLE_COUNT - particleCount, initialParticleDirection, initialParticleVelocity, initialParticlePos, initialParticleSpread);
+            }
+            ImGui::Separator();
+
+            ImGui::SliderFloat("Gravity", &gravityScale, 0.f, 100.f);
+            ImGui::SliderFloat("Smoothing radius", &smoothingRadius, 0.001f, 10.f);
+            ImGui::SliderFloat("Minimum density", &densityReference, 1.f, 2.f);
+            ImGui::SliderFloat("Pressure const", &pressureConst, 1.f, 1000.f);
+            ImGui::SliderFloat("Viscosity const", &viscosityConst, 0.001f, 1.f);
         }
         ImGui::End();
 
