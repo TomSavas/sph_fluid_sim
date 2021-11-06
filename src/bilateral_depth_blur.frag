@@ -15,6 +15,7 @@ float linearizeDepth(float depth)
     return (2.f * near) / (far + near - depth * (far - near));
 }
 
+// Courtesy of mrharicot at shadertoy: https://www.shadertoy.com/view/4dfGDH#
 #define SIGMA 100.0
 #define BSIGMA 0.1
 #define SIZE 50
