@@ -628,6 +628,7 @@ int main(void)
                 simpleInstancedModelShader.SetUniform("view", camera.View());
                 simpleInstancedModelShader.SetUniform("cameraPos", camera.transform.pos);
                 simpleInstancedModelShader.SetUniform("model", t.Model());
+                simpleInstancedModelShader.SetUniform("useDensityForColor", 1);
                 glDrawArraysInstanced(GL_TRIANGLES, 0, quad.size(), renderedParticleCount);
                 t.rot = glm::quat();
                 break;
@@ -653,6 +654,7 @@ int main(void)
                 simpleInstancedModelShader.SetUniform("view", camera.View());
                 simpleInstancedModelShader.SetUniform("cameraPos", camera.transform.pos);
                 simpleInstancedModelShader.SetUniform("model", t.Model());
+                simpleInstancedModelShader.SetUniform("useDensityForColor", 1);
                 glDrawArraysInstanced(GL_TRIANGLES, 0, sphere.size(), renderedParticleCount);
                 break;
             case DEPTH:
@@ -833,7 +835,6 @@ int main(void)
         simpleModelShader.Use();
         simpleModelShader.SetUniform("projection", camera.projection);
         simpleModelShader.SetUniform("view", camera.View());
-        simpleModelShader.SetUniform("density", 0.5f);
         static glm::vec<2, double> lastMousePos(0.f);
         glm::vec<2, double> mousePos;
         glfwGetCursorPos(window, &mousePos.x, &mousePos.y);
@@ -843,13 +844,15 @@ int main(void)
             glm::vec3 movement = camera.transform.Right() * (float)mouseDiff.x + camera.transform.Up() * -(float)mouseDiff.y;
             attractorTransform.pos += movement * 0.016f * 8.f;
         }
-        simpleModelShader.SetUniform("density", attractorEnabled ? 5.f : 0.f);
+        simpleModelShader.SetUniform("useDensityForColor", 0);
+        simpleModelShader.SetUniform("color", attractorEnabled ? glm::vec3(1.f, 0.f, 0.f) : glm::vec3(0.f, 0.f, 0.f));
         lastMousePos = mousePos;
         simpleModelShader.SetUniform("model", attractorTransform.Model());
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
         // Light
-        simpleModelShader.SetUniform("density", attractorEnabled ? 5.f : 0.f);
+        simpleModelShader.SetUniform("useDensityForColor", 0);
+        simpleModelShader.SetUniform("color", glm::vec3(1.f, 0.87f, 0.6f));
         simpleModelShader.SetUniform("model", lightTransform.Model());
         glDrawArrays(GL_TRIANGLES, 0, 36);
 
