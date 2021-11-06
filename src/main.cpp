@@ -314,7 +314,6 @@ int main(void)
     Shader quadSpriteSphereShader("../src/quad_sprite_sphere.vert", "../src/quad_sprite_sphere.frag");
     Shader quadSpriteSphereThicknessShader("../src/quad_sprite_sphere.vert", "../src/quad_sprite_sphere_thickness.frag");
     Shader normalFromDepthShader("../src/screen_quad.vert", "../src/normal_from_depth.frag");
-    Shader simpleFluidShader("../src/screen_quad.vert", "../src/simple_fluid.frag");
     Shader bilateralDepthBlurShader("../src/screen_quad.vert", "../src/bilateral_depth_blur.frag");
     Shader thicknessGaussianBlurShader("../src/screen_quad.vert", "../src/thickness_gaussian_blur.frag");
     Shader fluidShader("../src/screen_quad.vert", "../src/fluid.frag");
