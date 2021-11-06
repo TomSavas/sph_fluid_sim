@@ -4,7 +4,7 @@ Simple Smoothed Particle Hydrodynamics fluid simulation using compute shaders.
 Simulation based on [this whitepaper on SPH fluid sim](http://rlguy.com/sphfluidsim/).</br>
 Visualization based on an [old GDC talk done by Simon Green on screen space fluids](https://developer.download.nvidia.com/presentations/2010/gdc/Direct3D_Effects.pdf).
 
-This should not be taken as a learning source, as the code is rather messy, not to mention that none of the code was optimized whatsoever nor.
+This should not be taken as a learning source, as the code is rather messy, not to mention that none of the code was optimized whatsoever.
 
 ## Preview
 
