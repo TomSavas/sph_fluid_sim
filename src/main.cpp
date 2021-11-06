@@ -71,10 +71,15 @@ void ShowInfo(Camera& camera, int particleCount)
         ImGui::Text("Particle count: %d", particleCount);
         ImGui::Separator();
 
-        ImGui::Text("Press \"P\"    button to pause/unpause the simulation");
-        ImGui::Text("Press \"C\"    button to emit particles");
-        ImGui::Text("Press \"R\"    button to reset the simulation");
-        ImGui::Text("Hold  \"Ctrl\" button to fly faster");
+        ImGui::Text("Press WASD buttons to move");
+        ImGui::Text("Press P    button to pause/unpause the simulation");
+        ImGui::Text("Press C    button to emit particles");
+        ImGui::Text("Press R    button to reset the simulation");
+        ImGui::Text("Hold  Ctrl button to move faster");
+
+        ImGui::Separator();
+        ImGui::Text("Hold right mouse button and move it to move the camera");
+        ImGui::Text("Hold left mouse button and move it to move the attractor in the camera plane");
     }
     ImGui::End();
 }
