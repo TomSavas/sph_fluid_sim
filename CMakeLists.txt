@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1)
 
-set(PROJECT sph_particle_sim)
+set(PROJECT sph_fluid_sim)
 project(${PROJECT})
 set(EXEC ${PROJECT})
 
