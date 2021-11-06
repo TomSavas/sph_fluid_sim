@@ -29,8 +29,7 @@ target_link_libraries(${PROJECT} OpenGL::GL)
 add_subdirectory(lib/glad)
 target_link_libraries(${PROJECT} glad)
 
-set(glm_DIR lib/glm/cmake/glm)
-find_package(glm REQUIRED)
+add_subdirectory(lib/glm)
 target_link_libraries(${PROJECT} glm::glm)
 
 target_link_libraries(${PROJECT} GLEW)
