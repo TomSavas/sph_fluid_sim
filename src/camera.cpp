@@ -8,7 +8,7 @@
 Camera::Camera(float verticalFOV,
         float aspectRatio)
     : verticalFOV(verticalFOV), aspectRatio(aspectRatio),
-      nearClippingPlane(0.1f), farClippingPlane(100000.f)
+      nearClippingPlane(1.f), farClippingPlane(200.f)
 {
     projection = glm::perspective(glm::radians(verticalFOV), aspectRatio, nearClippingPlane, farClippingPlane);
     //projection = glm::ortho(0.f, 1920.f, 0.f, 1080.f, -1.f, farClippingPlane);
@@ -39,7 +39,7 @@ void Camera::Update(GLFWwindow *window)
         while(radToVertical < -glm::pi<float>() * 2)
             radToVertical += glm::pi<float>() * 2;
 
-        radToHorizon += mousePosDif.y * 0.005f;
+        radToHorizon -= mousePosDif.y * 0.005f;
         radToHorizon = std::min(std::max(radToHorizon, -glm::pi<double>() / 2 + 0.01), glm::pi<double>() / 2 - 0.01);
 
         transform.rot = glm::quat(glm::vec3(radToHorizon, -radToVertical, 0.f));

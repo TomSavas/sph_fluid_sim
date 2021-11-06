@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.1)
 
-set(PROJECT particle)
+set(PROJECT sph_particle_sim)
 project(${PROJECT})
 set(EXEC ${PROJECT})
 
@@ -10,7 +10,6 @@ set(CMAKE_CXX_FLAGS_DEBUG "-ggdb -O2 -DDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 
 file(GLOB_RECURSE SOURCES "src/*.cpp" "lib/imgui/*.cpp")
-#file(GLOB SOURCES "lib/imgui/*.cpp")
 message(${SOURCES})
 
 add_executable(${EXEC} ${SOURCES})

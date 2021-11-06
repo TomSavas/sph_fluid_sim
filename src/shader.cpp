@@ -42,6 +42,7 @@ Shader::Shader(const char *compFilepath)
     {
         compilationSucceeded = false;
         strcpy(compilationErrorMsg, "Failed reading shaders from files");
+        printf("Failed reading file %s\n", compFilepath);
 
         return;
     }
@@ -76,6 +77,7 @@ Shader::Shader(const char *vsFilepath, const char *fsFilepath)
     {
         compilationSucceeded = false;
         strcpy(compilationErrorMsg, "Failed reading shaders from files");
+        printf("Failed reading files %s, %s\n", vsFilepath, fsFilepath);
 
         return;
     }
@@ -134,6 +136,7 @@ Shader::Shader(const char *vsFilepath, const char *gsFilepath, const char *fsFil
     {
         compilationSucceeded = false;
         strcpy(compilationErrorMsg, "Failed reading shaders from files");
+        printf("Failed reading files %s, %s, %s\n", vsFilepath, gsFilepath, fsFilepath);
 
         return;
     }

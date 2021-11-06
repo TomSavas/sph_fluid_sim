@@ -9,5 +9,5 @@ void main()
 {
     TexPos = pos;
     vec4 position = viewProjection * vec4(pos, 1.f);
-    gl_Position = position.xyww; //?
+    gl_Position = position.xyww;
 }
