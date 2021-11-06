@@ -26,9 +26,6 @@ target_link_libraries(${PROJECT} glfw)
 find_package(OpenGL REQUIRED)
 target_link_libraries(${PROJECT} OpenGL::GL)
 
-add_subdirectory(lib/glad)
-target_link_libraries(${PROJECT} glad)
-
 add_subdirectory(lib/glm)
 target_link_libraries(${PROJECT} glm::glm)
 
